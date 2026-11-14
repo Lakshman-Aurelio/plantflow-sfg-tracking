@@ -151,7 +151,7 @@ def receive(tid:int,x:Receipt):
             remaining=i["quantity"]-i["received_qty"]
             if rec.quantity>remaining: raise HTTPException(409,"Received quantity exceeds outstanding quantity.")
             c.execute("UPDATE transfer_items SET received_qty=received_qty+%s WHERE id=%s",(rec.quantity,i["id"]))
-            c.execute("INSERT INTO inventory(plant_id,product_id,on_hand,in_transit) VALUES(%s,%s,%s,0) ON CONFLICT(plant_id,product_id) DO UPDATE SET on_hand=on_hand+excluded.on_hand",(t["destination_id"],rec.product_id,rec.quantity))
+            c.execute("INSERT INTO inventory(plant_id,product_id,on_hand,in_transit) VALUES(%s,%s,%s,0) ON CONFLICT(plant_id,product_id) DO UPDATE SET on_hand=inventory.on_hand+EXCLUDED.on_hand",(t["destination_id"],rec.product_id,rec.quantity))
             updated=c.execute("UPDATE inventory SET in_transit=in_transit-%s WHERE plant_id=%s AND product_id=%s AND in_transit >= %s",(rec.quantity,t["source_id"],rec.product_id,rec.quantity))
             if updated.rowcount != 1: raise HTTPException(409,"Source in-transit balance is inconsistent; receipt was not applied.")
             c.execute("INSERT INTO stock_movements(plant_id,product_id,transfer_id,movement_type,quantity,created_at,note) VALUES(%s,%s,%s,%s,%s,%s,%s)",(t["destination_id"],rec.product_id,tid,"RECEIPT",rec.quantity,stamp,x.discrepancy_reason))
