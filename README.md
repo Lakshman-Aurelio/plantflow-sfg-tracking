@@ -1,30 +1,34 @@
 # PlantFlow — SFG Transfer Tracking
 
-PlantFlow is a prototype for tracking semi-finished-goods (SFG) transfers and inventory across three plants.
+PlantFlow is a prototype for tracking semi-finished-goods transfers and inventory across three plants.
 
-## Target deployment
+## Architecture
 
-- **Source:** public GitHub repository
-- **Frontend:** React + TypeScript + Vite on Vercel
-- **Backend:** FastAPI on Render
-- **Database:** PostgreSQL on Neon
-- **Local development:** Docker Compose with PostgreSQL
+- **Frontend:** React + TypeScript + Vite; target host Vercel.
+- **API:** FastAPI; target host Render.
+- **Database:** PostgreSQL; target provider Neon.
+- **Local development:** Docker Compose with PostgreSQL.
+- **Database schema:** versioned Alembic migrations.
+- **Authentication:** JWT bearer tokens; Argon2 password hashing.
+- **Authorization:** admin, manager and viewer roles, with plant-scoped inventory and transfer access.
 
-The application now uses PostgreSQL. SQLite is no longer the application database.
-
-## Features in this prototype
+## Current prototype features
 
 - Create transfers with multiple SKU/quantity lines.
 - Dispatch and receive actions record server-generated UTC timestamps.
-- Dispatch moves units from source on-hand to source in-transit; receipt moves accepted units into destination stock.
+- Dispatch moves stock from source on-hand to source in-transit; receipt moves accepted units into destination stock.
 - Partial receipts, discrepancy notes, event history and stock movement records.
 - Search by transfer number or SKU; filter by status and date range.
 - Dashboard metrics and CSV export.
 - Three demo plants and sample SKUs are seeded into an empty database.
+- Admins can provision accounts through the protected `POST /api/users` endpoint.
 
 ## Run locally on Windows 11
 
-Install Docker Desktop, then from the repository root run:
+1. Install Docker Desktop.
+2. Copy `.env.example` to `.env`.
+3. Replace the example JWT secret, admin email and admin password in `.env`. Use a unique password with at least 12 characters.
+4. From the repository root run:
 
 ```powershell
 docker compose up --build
@@ -35,44 +39,36 @@ Open:
 - API: http://localhost:8000
 - API docs: http://localhost:8000/docs
 
-Stop services with `Ctrl+C`, then optionally run `docker compose down`. To remove the local database volume and reset demo data, run `docker compose down -v`.
+Sign in using the bootstrap admin email and password from your local `.env`. Do not use the example values in a hosted environment.
 
-### Run frontend/backend separately
+Stop with `Ctrl+C`; run `docker compose down` to stop containers. To reset the local database and demo accounts, run `docker compose down -v`.
 
-Start PostgreSQL separately and set `DATABASE_URL` in the backend environment. Then:
+## Roles
 
-Backend:
+| Role | Access |
+|---|---|
+| Admin | All plants, all transfers, user provisioning |
+| Manager | Create/dispatch transfers from assigned plant; receive transfers into assigned plant |
+| Viewer | Read-only access scoped to assigned plant |
+
+Create a manager or viewer account as an administrator:
+
 ```powershell
-cd backend
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-$env:DATABASE_URL="postgresql://plantflow:plantflow_dev_password@localhost:5432/plantflow"
-$env:CORS_ORIGINS="http://localhost:5173"
-uvicorn app.main:app --reload
+$token = "ADMIN_ACCESS_TOKEN"
+$body = @{ email="manager@example.com"; password="Use-A-Unique-Password"; role="manager"; plant_id=1 } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/users" -Headers @{ Authorization="Bearer $token" } -ContentType "application/json" -Body $body
 ```
 
-Frontend in a second terminal:
-```powershell
-cd frontend
-npm install
-$env:VITE_API_BASE_URL="http://localhost:8000/api"
-npm run dev
-```
+The API returns a bearer token from `POST /api/auth/login`. Access tokens expire after the configured `TOKEN_MINUTES` (default 480 minutes). The current UI supports login and sign-out; account provisioning is through the protected API.
 
-## Deploy
+## Deployment
 
-1. Create a Neon PostgreSQL database and copy its connection string.
-2. Deploy the `backend` directory to Render using `backend/Dockerfile` or the Python build/start commands in `render.yaml`. Set `DATABASE_URL` to the Neon connection string and `CORS_ORIGINS` to the exact Vercel production origin.
-3. Deploy the `frontend` directory to Vercel. Set `VITE_API_BASE_URL` to `https://YOUR-RENDER-SERVICE.onrender.com/api`.
-4. Redeploy the frontend after changing its environment variables.
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Render, Vercel and Neon configuration. Never commit `.env`, database URLs, passwords, JWT secrets or SAP credentials.
 
-Do not commit real database URLs, credentials, API keys or SAP secrets. See `.env.example` files and `docs/DEPLOYMENT.md`.
+## Future integrations
 
-## SAP integration direction
+SAP S/4HANA, GPS/carrier feeds and an AI assistant are not connected. SAP edition, APIs, authentication, connectivity and data ownership must be confirmed with Indus before implementing the connector.
 
-SAP version is not yet confirmed by Indus. The codebase therefore defines an ERP adapter boundary and documents SAP S/4HANA as the first planned connector, without pretending that a live SAP connection exists. The actual connector requires confirmation of the SAP edition, enabled APIs, authentication method, network access and master-data mappings.
+## Production readiness limitations
 
-## Production limitations
-
-This is still a prototype, not a production-ready enterprise inventory system. Authentication, plant-scoped authorization, approvals, operational monitoring, backup/restore procedures, formal migration review, idempotency keys, ERP reconciliation and security testing must be completed before live plant use. GPS is manual checkpoint only. SAP, carrier APIs and AI are not connected. Inventory valuation is not shown without verified cost and currency data.
+This remains a prototype. Before live plant use, complete a security review, TLS/domain configuration, backup and restore drills, audit retention, monitoring/alerting, rate limiting, password reset and account recovery, session revocation, formal concurrency testing, and business acceptance testing. The manager/viewer authorization is plant-scoped for inventory and transfer operations, but the product catalogue and plant directory are shared reference data. A dedicated user administration UI is not yet included.
