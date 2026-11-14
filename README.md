@@ -1,6 +1,6 @@
 # PlantFlow — SFG Transfer Tracking
 
-PlantFlow is a prototype for tracking semi-finished-goods transfers and inventory across three plants.
+PlantFlow is a prototype for tracking semi-finished-goods transfers and inventory across three plants, with traceability to parent-build job orders.
 
 ## Architecture
 
@@ -8,20 +8,25 @@ PlantFlow is a prototype for tracking semi-finished-goods transfers and inventor
 - **API:** FastAPI; target host Render.
 - **Database:** PostgreSQL; target provider Neon.
 - **Local development:** Docker Compose with PostgreSQL.
-- **Database schema:** versioned Alembic migrations.
+- **Schema:** versioned Alembic migrations.
 - **Authentication:** JWT bearer tokens; Argon2 password hashing.
 - **Authorization:** admin, manager and viewer roles, with plant-scoped inventory and transfer access.
 
-## Current prototype features
+## Prototype features
 
-- Create transfers with multiple SKU/quantity lines.
+- Create transfers with multiple SKU/quantity lines and optional parent-build job order reference.
+- Import a sample job order JSON file from the **Job Orders** screen.
+- Keep the parent build reference visible in transfer details.
 - Dispatch and receive actions record server-generated UTC timestamps.
 - Dispatch moves stock from source on-hand to source in-transit; receipt moves accepted units into destination stock.
 - Partial receipts, discrepancy notes, event history and stock movement records.
 - Search by transfer number or SKU; filter by status and date range.
 - Dashboard metrics and CSV export.
 - Three demo plants and sample SKUs are seeded into an empty database.
-- Admins can provision accounts through the protected `POST /api/users` endpoint.
+
+## Job order system demonstration
+
+The existing job order system remains the system of record for parent builds. The sample contract is [job-order-JO-2026-001.json](docs/samples/job-order-JO-2026-001.json). The API accepts the JSON payload at `POST /api/job-orders/import`; imported orders can be listed and linked to SFG transfers. The Job Orders screen imports the committed sample file. This is a simulated interface contract: no real external system is connected and PlantFlow does not send updates back. See [integration details](docs/JOB_ORDER_INTEGRATION.md).
 
 ## Run locally on Windows 11
 
@@ -39,36 +44,10 @@ Open:
 - API: http://localhost:8000
 - API docs: http://localhost:8000/docs
 
-Sign in using the bootstrap admin email and password from your local `.env`. Do not use the example values in a hosted environment.
+Sign in using the bootstrap admin email and password from your local `.env`.
 
-Stop with `Ctrl+C`; run `docker compose down` to stop containers. To reset the local database and demo accounts, run `docker compose down -v`.
+## Deployment and limitations
 
-## Roles
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Render, Vercel and Neon configuration and [docs/DELIVERY_NOTE.md](docs/DELIVERY_NOTE.md) for assumptions, design decisions and next steps.
 
-| Role | Access |
-|---|---|
-| Admin | All plants, all transfers, user provisioning |
-| Manager | Create/dispatch transfers from assigned plant; receive transfers into assigned plant |
-| Viewer | Read-only access scoped to assigned plant |
-
-Create a manager or viewer account as an administrator:
-
-```powershell
-$token = "ADMIN_ACCESS_TOKEN"
-$body = @{ email="manager@example.com"; password="Use-A-Unique-Password"; role="manager"; plant_id=1 } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/users" -Headers @{ Authorization="Bearer $token" } -ContentType "application/json" -Body $body
-```
-
-The API returns a bearer token from `POST /api/auth/login`. Access tokens expire after the configured `TOKEN_MINUTES` (default 480 minutes). The current UI supports login and sign-out; account provisioning is through the protected API.
-
-## Deployment
-
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Render, Vercel and Neon configuration. Never commit `.env`, database URLs, passwords, JWT secrets or SAP credentials.
-
-## Future integrations
-
-SAP S/4HANA, GPS/carrier feeds and an AI assistant are not connected. SAP edition, APIs, authentication, connectivity and data ownership must be confirmed with Indus before implementing the connector.
-
-## Production readiness limitations
-
-This remains a prototype. Before live plant use, complete a security review, TLS/domain configuration, backup and restore drills, audit retention, monitoring/alerting, rate limiting, password reset and account recovery, session revocation, formal concurrency testing, and business acceptance testing. The manager/viewer authorization is plant-scoped for inventory and transfer operations, but the product catalogue and plant directory are shared reference data. A dedicated user administration UI is not yet included.
+This remains a prototype. Real job-order integration, SAP S/4HANA, GPS/carrier feeds and AI are not connected. Production use requires confirmed master data, agreed interfaces, security review, backups, monitoring, concurrency/idempotency testing and business acceptance.
