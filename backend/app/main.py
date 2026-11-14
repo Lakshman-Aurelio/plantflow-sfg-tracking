@@ -120,7 +120,7 @@ def create_transfer(x:TransferIn):
 @app.post("/api/transfers/{tid}/dispatch")
 def dispatch(tid:int):
     with db() as c:
-        t=c.execute("SELECT * FROM transfers WHERE id=%s",(tid,)).fetchone()
+        t=c.execute("SELECT * FROM transfers WHERE id=%s FOR UPDATE",(tid,)).fetchone()
         if not t: raise HTTPException(404,"Transfer not found.")
         if t["status"]!="DRAFT": raise HTTPException(409,"Only draft transfers can be dispatched.")
         items=c.execute("SELECT * FROM transfer_items WHERE transfer_id=%s ORDER BY product_id",(tid,)).fetchall()
@@ -149,7 +149,8 @@ def receive(tid:int,x:Receipt):
             if rec.quantity>remaining: raise HTTPException(409,"Received quantity exceeds outstanding quantity.")
             c.execute("UPDATE transfer_items SET received_qty=received_qty+%s WHERE id=%s",(rec.quantity,i["id"]))
             c.execute("INSERT INTO inventory(plant_id,product_id,on_hand,in_transit) VALUES(%s,%s,%s,0) ON CONFLICT(plant_id,product_id) DO UPDATE SET on_hand=on_hand+excluded.on_hand",(t["destination_id"],rec.product_id,rec.quantity))
-            c.execute("UPDATE inventory SET in_transit=in_transit-%s WHERE plant_id=%s AND product_id=%s",(rec.quantity,t["source_id"],rec.product_id))
+            updated=c.execute("UPDATE inventory SET in_transit=in_transit-%s WHERE plant_id=%s AND product_id=%s AND in_transit >= %s",(rec.quantity,t["source_id"],rec.product_id,rec.quantity))
+            if updated.rowcount != 1: raise HTTPException(409,"Source in-transit balance is inconsistent; receipt was not applied.")
             c.execute("INSERT INTO stock_movements(plant_id,product_id,transfer_id,movement_type,quantity,created_at,note) VALUES(%s,%s,%s,%s,%s,%s,%s)",(t["destination_id"],rec.product_id,tid,"RECEIPT",rec.quantity,stamp,x.discrepancy_reason))
         sums=c.execute("SELECT SUM(quantity) q,SUM(received_qty) r FROM transfer_items WHERE transfer_id=%s",(tid,)).fetchone()
         status="DISCREPANCY" if x.discrepancy_reason.strip() else ("RECEIVED" if sums["q"]==sums["r"] else "PARTIALLY_RECEIVED")
