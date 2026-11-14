@@ -273,6 +273,40 @@ def health():
     return {"status": "ok", "database": "postgresql"}
 
 
+
+@app.get("/api/job-orders")
+def job_orders(request: Request):
+    with db() as connection:
+        rows = connection.execute("SELECT job_order_id,parent_build,product,quantity,unit,status,created_at FROM job_orders ORDER BY created_at DESC").fetchall()
+        return [dict(row) for row in rows]
+
+
+@app.get("/api/job-orders/{job_order_id}")
+def job_order_detail(job_order_id: str, request: Request):
+    with db() as connection:
+        row = connection.execute("SELECT * FROM job_orders WHERE job_order_id=%s", (job_order_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Job order not found.")
+        return dict(row)
+
+
+@app.post("/api/job-orders/import")
+def import_job_order(data: JobOrderIn, request: Request):
+    require_roles(request, "admin", "manager")
+    with db() as connection:
+        if connection.execute("SELECT 1 FROM job_orders WHERE job_order_id=%s", (data.job_order_id,)).fetchone():
+            raise HTTPException(409, "This job order has already been imported.")
+        connection.execute(
+            "INSERT INTO job_orders(job_order_id,parent_build,product,quantity,unit,status,payload,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
+            (data.job_order_id, data.parent_build, data.product, data.quantity, data.unit, "OPEN", Jsonb(data.model_dump()), now()),
+        )
+        connection.execute(
+            "INSERT INTO job_order_events(job_order_id,event_type,event_at,details) VALUES(%s,%s,%s,%s)",
+            (data.job_order_id, "IMPORTED", now(), "Imported from external job order system using the sample integration contract."),
+        )
+        return {"job_order_id": data.job_order_id, "status": "OPEN", "imported": True}
+
+
 @app.get("/api/plants")
 def plants():
     with db() as connection:
