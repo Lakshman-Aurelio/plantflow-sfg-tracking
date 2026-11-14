@@ -240,7 +240,9 @@ def location(tid:int,x:Location):
 def dashboard():
     with db() as c:
         query="SELECT status,COUNT(*) n FROM transfers GROUP BY status"; args=[]\n        if u["role"]!="admin" and u["plant_id"] is not None: query="SELECT status,COUNT(*) n FROM transfers WHERE source_id=%s OR destination_id=%s GROUP BY status"; args=[u["plant_id"],u["plant_id"]]\n        counts={r["status"]:r["n"] for r in c.execute(query,args)}
-        rows=c.execute("SELECT dispatched_at,received_at FROM transfers WHERE status='RECEIVED' AND dispatched_at IS NOT NULL AND received_at IS NOT NULL").fetchall()
+        query="SELECT dispatched_at,received_at FROM transfers WHERE status='RECEIVED' AND dispatched_at IS NOT NULL AND received_at IS NOT NULL"; args=[]
+        if u["role"]!="admin" and u["plant_id"] is not None: query+=" AND (source_id=%s OR destination_id=%s)"; args=[u["plant_id"],u["plant_id"]]
+        rows=c.execute(query,args).fetchall()
         durations=[]
         for r in rows:
             try: durations.append((datetime.fromisoformat(r["received_at"])-datetime.fromisoformat(r["dispatched_at"])).total_seconds()/3600)
