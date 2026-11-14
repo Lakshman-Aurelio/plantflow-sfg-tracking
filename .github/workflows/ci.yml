@@ -38,6 +38,7 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql://plantflow:plantflow_test_password@localhost:5432/plantflow
+      JWT_SECRET: ci-only-not-a-production-secret-12345678901234567890
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -45,4 +46,5 @@ jobs:
           python-version: "3.12"
       - run: python -m compileall -q backend/app backend/tests
       - run: pip install -r backend/requirements.txt
+      - run: cd backend && alembic upgrade head
       - run: PYTHONPATH=backend python backend/tests/smoke_postgres.py
