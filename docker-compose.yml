@@ -20,6 +20,10 @@ services:
     environment:
       DATABASE_URL: postgresql://plantflow:plantflow_dev_password@db:5432/plantflow
       CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      JWT_SECRET: ${JWT_SECRET:?Copy .env.example to .env and set secrets}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:?Set bootstrap admin email in .env}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?Set bootstrap admin password in .env}
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     ports:
       - "8000:8000"
     depends_on:
