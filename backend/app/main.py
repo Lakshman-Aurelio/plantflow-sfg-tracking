@@ -33,7 +33,7 @@ def init():
                 "CREATE TABLE products(id BIGSERIAL PRIMARY KEY,sku TEXT UNIQUE NOT NULL,name TEXT NOT NULL,unit TEXT NOT NULL DEFAULT 'pcs')",
                 "CREATE TABLE inventory(plant_id BIGINT REFERENCES plants(id),product_id BIGINT REFERENCES products(id),on_hand INTEGER NOT NULL DEFAULT 0 CHECK(on_hand>=0),in_transit INTEGER NOT NULL DEFAULT 0 CHECK(in_transit>=0),PRIMARY KEY(plant_id,product_id))",
                 "CREATE TABLE transfers(id BIGSERIAL PRIMARY KEY,number TEXT UNIQUE NOT NULL,source_id BIGINT REFERENCES plants(id),destination_id BIGINT REFERENCES plants(id),status TEXT NOT NULL,created_at TEXT NOT NULL,dispatched_at TEXT,received_at TEXT,notes TEXT DEFAULT '',carrier TEXT DEFAULT '',expected_at TEXT)",
-                "CREATE TABLE transfer_items(id BIGSERIAL PRIMARY KEY,transfer_id BIGINT REFERENCES transfers(id),product_id BIGINT REFERENCES products(id),quantity INTEGER NOT NULL CHECK(quantity>0),received_qty INTEGER NOT NULL DEFAULT 0 CHECK(received_qty>=0),UNIQUE(transfer_id,product_id))",
+                "CREATE TABLE transfer_items(id BIGSERIAL PRIMARY KEY,transfer_id BIGINT REFERENCES transfers(id),product_id BIGINT REFERENCES products(id),quantity INTEGER NOT NULL CHECK(quantity>0),received_qty INTEGER NOT NULL DEFAULT 0 CHECK(received_qty>=0 AND received_qty<=quantity),UNIQUE(transfer_id,product_id))",
                 "CREATE TABLE events(id BIGSERIAL PRIMARY KEY,transfer_id BIGINT REFERENCES transfers(id),event_type TEXT NOT NULL,event_at TEXT NOT NULL,details TEXT DEFAULT '')",
                 "CREATE TABLE stock_movements(id BIGSERIAL PRIMARY KEY,plant_id BIGINT REFERENCES plants(id),product_id BIGINT REFERENCES products(id),transfer_id BIGINT REFERENCES transfers(id),movement_type TEXT NOT NULL,quantity INTEGER NOT NULL,created_at TEXT NOT NULL,note TEXT DEFAULT '')",
                 "CREATE INDEX idx_transfers_created_at ON transfers(created_at)",
@@ -45,8 +45,10 @@ def init():
                 c.execute(statement)
             c.execute("INSERT INTO schema_migrations(version) VALUES('001_initial')")
         if c.execute("SELECT COUNT(*) AS n FROM plants").fetchone()["n"]==0:
-            c.executemany("INSERT INTO plants(name,code) VALUES(%s,%s)",[("Demo Plant 1","PLT-01"),("Demo Plant 2","PLT-02"),("Demo Plant 3","PLT-03")])
-            c.executemany("INSERT INTO products(sku,name,unit) VALUES(%s,%s,%s)",[("HDR-001","Header Assembly","pcs"),("SMP-002","Sheet Metal Panel","pcs"),("MTB-003","Motor Base","pcs"),("BRK-004","Bracket Set","sets")])
+            for row in [("Demo Plant 1","PLT-01"),("Demo Plant 2","PLT-02"),("Demo Plant 3","PLT-03")]:
+                c.execute("INSERT INTO plants(name,code) VALUES(%s,%s)",row)
+            for row in [("HDR-001","Header Assembly","pcs"),("SMP-002","Sheet Metal Panel","pcs"),("MTB-003","Motor Base","pcs"),("BRK-004","Bracket Set","sets")]:
+                c.execute("INSERT INTO products(sku,name,unit) VALUES(%s,%s,%s)",row)
             for plant in range(1,4):
                 for product,qty in [(1,120*plant),(2,85*plant),(3,60*plant),(4,45*plant)]:
                     c.execute("INSERT INTO inventory(plant_id,product_id,on_hand) VALUES(%s,%s,%s)",(plant,product,qty))
@@ -106,20 +108,22 @@ def create_transfer(x:TransferIn):
     if not x.items: raise HTTPException(400,"Add at least one SKU line.")
     if len({line.product_id for line in x.items}) != len(x.items): raise HTTPException(400,"Each SKU can appear only once per transfer.")
     with db() as c:
+        for plant_id in (x.source_id, x.destination_id):
+            if not c.execute("SELECT 1 FROM plants WHERE id=%s",(plant_id,)).fetchone(): raise HTTPException(404,"Plant not found.")
         for line in x.items:
             if not c.execute("SELECT 1 FROM products WHERE id=%s",(line.product_id,)).fetchone(): raise HTTPException(404,"Product not found.")
         stamp=now(); number="SFG-"+datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
         tid=c.execute("INSERT INTO transfers(number,source_id,destination_id,status,created_at,notes,carrier,expected_at) VALUES(%s,%s,%s,'DRAFT',%s,%s,%s,%s) RETURNING id",(number,x.source_id,x.destination_id,stamp,x.notes,x.carrier,x.expected_at)).fetchone()["id"]
         for line in x.items: c.execute("INSERT INTO transfer_items(transfer_id,product_id,quantity) VALUES(%s,%s,%s)",(tid,line.product_id,line.quantity))
         c.execute("INSERT INTO events(transfer_id,event_type,event_at,details) VALUES(%s,%s,%s,%s)",(tid,"CREATED",stamp,"Transfer created"))
-        return transfer_view(c,c.execute("SELECT * FROM transfers WHERE id=%s",(tid,)).fetchone())
+        return transfer_view(c,c.execute("SELECT * FROM transfers WHERE id=%s FOR UPDATE",(tid,)).fetchone())
 @app.post("/api/transfers/{tid}/dispatch")
 def dispatch(tid:int):
     with db() as c:
         t=c.execute("SELECT * FROM transfers WHERE id=%s",(tid,)).fetchone()
         if not t: raise HTTPException(404,"Transfer not found.")
         if t["status"]!="DRAFT": raise HTTPException(409,"Only draft transfers can be dispatched.")
-        items=c.execute("SELECT * FROM transfer_items WHERE transfer_id=%s",(tid,)).fetchall()
+        items=c.execute("SELECT * FROM transfer_items WHERE transfer_id=%s ORDER BY product_id",(tid,)).fetchall()
         for i in items:
             inv=c.execute("SELECT on_hand FROM inventory WHERE plant_id=%s AND product_id=%s FOR UPDATE",(t["source_id"],i["product_id"])).fetchone()
             if not inv or inv["on_hand"]<i["quantity"]: raise HTTPException(409,f"Insufficient stock for product ID {i['product_id']}.")
