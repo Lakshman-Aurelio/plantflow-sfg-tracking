@@ -1,6 +1,7 @@
 """Small integration smoke test against a disposable PostgreSQL database."""
 import os
 os.environ.setdefault("JWT_SECRET", "ci-only-not-a-production-secret-" + "x" * 24)
+from starlette.requests import Request
 from app.main import Line, Receipt, TransferIn, create_transfer, db, dispatch, init, receive
 
 
@@ -13,17 +14,19 @@ def main() -> None:
             ("ci-admin@plantflow.test", "test-hash-not-used", "admin"),
         )
     init()
+    request = Request({"type": "http", "headers": [], "method": "POST", "path": "/"})
+    request.state.user = {"id": 1, "email": "ci-admin@plantflow.test", "role": "admin", "plant_id": None}
     transfer = create_transfer(
-        TransferIn(source_id=1, destination_id=2, items=[Line(product_id=1, quantity=3)])
+        TransferIn(source_id=1, destination_id=2, items=[Line(product_id=1, quantity=3)]), request
     )
     transfer_id = transfer["id"]
 
-    dispatched = dispatch(transfer_id)
+    dispatched = dispatch(transfer_id, request)
     assert dispatched["status"] == "IN_TRANSIT"
 
-    partial = receive(transfer_id, Receipt(items=[Line(product_id=1, quantity=1)]))
+    partial = receive(transfer_id, Receipt(items=[Line(product_id=1, quantity=1)]), request)
     assert partial["status"] == "PARTIALLY_RECEIVED"
-    completed = receive(transfer_id, Receipt(items=[Line(product_id=1, quantity=2)]))
+    completed = receive(transfer_id, Receipt(items=[Line(product_id=1, quantity=2)]), request)
     assert completed["status"] == "RECEIVED"
 
     with db() as connection:
