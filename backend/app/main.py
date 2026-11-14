@@ -78,7 +78,10 @@ def transfer_view(c,t):
     dst=c.execute("SELECT name,code FROM plants WHERE id=%s",(t["destination_id"],)).fetchone()
     return {**dict(t),"source":dict(src),"destination":dict(dst),"items":[dict(x) for x in items],"events":[dict(x) for x in events]}
 @app.get("/api/health")
-def health(): return {"status":"ok","database":"postgresql"}
+def health():
+    with db() as c:
+        c.execute("SELECT 1")
+    return {"status":"ok","database":"postgresql"}
 @app.get("/api/plants")
 def plants():
     with db() as c: return [dict(x) for x in c.execute("SELECT * FROM plants ORDER BY id")]
