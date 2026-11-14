@@ -6,3 +6,4 @@ PyJWT==2.10.1
 pwdlib[argon2]==0.2.1
 alembic==1.15.2
 SQLAlchemy==2.0.40
+httpx==0.28.1
