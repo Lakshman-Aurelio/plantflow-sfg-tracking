@@ -1,0 +1,13 @@
+{
+  "job_order_id": "JO-2026-001",
+  "parent_build": "PARENT-ASSY-1001",
+  "product": "Industrial Header Assembly",
+  "quantity": 100,
+  "unit": "pcs",
+  "required_sfg": [
+    {
+      "sku": "HDR-001",
+      "quantity": 100
+    }
+  ]
+}
