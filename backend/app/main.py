@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, EmailStr, Field
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 from pwdlib import PasswordHash
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -160,7 +161,22 @@ class Line(BaseModel):
     quantity: int = Field(gt=0)
 
 
+class JobOrderLine(BaseModel):
+    sku: str = Field(min_length=1, max_length=64)
+    quantity: int = Field(gt=0)
+
+
+class JobOrderIn(BaseModel):
+    job_order_id: str = Field(min_length=1, max_length=80)
+    parent_build: str = Field(min_length=1, max_length=120)
+    product: str = Field(min_length=1, max_length=160)
+    quantity: int = Field(gt=0)
+    unit: str = Field(default="pcs", max_length=16)
+    required_sfg: list[JobOrderLine] = Field(min_length=1)
+
+
 class TransferIn(BaseModel):
+    job_order_id: Optional[str] = None
     source_id: int
     destination_id: int
     items: list[Line]
