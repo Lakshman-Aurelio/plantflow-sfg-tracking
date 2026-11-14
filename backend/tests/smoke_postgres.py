@@ -12,11 +12,11 @@ def main() -> None:
     with db() as connection:
         connection.execute(
             "INSERT INTO users(email,password_hash,role) VALUES(%s,%s,%s) ON CONFLICT(email) DO NOTHING",
-            ("ci-admin@plantflow.test", password_hash.hash("CITest-Password-1234"), "admin"),
+            ("plantflow-ci@gmail.com", password_hash.hash("CITest-Password-1234"), "admin"),
         )
     init()
     with db() as connection:
-        connection.execute("INSERT INTO users(email,password_hash,role,plant_id) VALUES(%s,%s,%s,%s) ON CONFLICT(email) DO NOTHING", ("ci-viewer@plantflow.test", password_hash.hash("ViewerTest-Password-1234"), "viewer", 1))
+        connection.execute("INSERT INTO users(email,password_hash,role,plant_id) VALUES(%s,%s,%s,%s) ON CONFLICT(email) DO NOTHING", ("plantflow-viewer@gmail.com", password_hash.hash("ViewerTest-Password-1234"), "viewer", 1))
     with TestClient(app) as client:
         assert client.get("/api/plants").status_code == 401
         login = client.post("/api/auth/login", json={"email":"ci-admin@plantflow.test","password":"CITest-Password-1234"})
