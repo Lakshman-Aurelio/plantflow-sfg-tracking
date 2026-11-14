@@ -2,7 +2,8 @@
 import os
 os.environ.setdefault("JWT_SECRET", "ci-only-not-a-production-secret-" + "x" * 24)
 from starlette.requests import Request
-from app.main import Line, Receipt, TransferIn, create_transfer, db, dispatch, init, receive
+from fastapi.testclient import TestClient
+from app.main import Line, Receipt, TransferIn, app, create_transfer, db, dispatch, init, password_hash, receive
 
 
 def main() -> None:
@@ -11,9 +12,22 @@ def main() -> None:
     with db() as connection:
         connection.execute(
             "INSERT INTO users(email,password_hash,role) VALUES(%s,%s,%s) ON CONFLICT(email) DO NOTHING",
-            ("ci-admin@plantflow.test", "test-hash-not-used", "admin"),
+            ("ci-admin@plantflow.test", password_hash.hash("CITest-Password-1234"), "admin"),
         )
+    with db() as connection:
+        connection.execute("INSERT INTO users(email,password_hash,role,plant_id) VALUES(%s,%s,%s,%s) ON CONFLICT(email) DO NOTHING", ("ci-viewer@plantflow.test", password_hash.hash("ViewerTest-Password-1234"), "viewer", 1))
     init()
+    with TestClient(app) as client:
+        assert client.get("/api/plants").status_code == 401
+        login = client.post("/api/auth/login", json={"email":"ci-admin@plantflow.test","password":"CITest-Password-1234"})
+        assert login.status_code == 200, login.text
+        admin_headers = {"Authorization":"Bearer "+login.json()["access_token"]}
+        assert client.get("/api/plants", headers=admin_headers).status_code == 200
+        viewer_login = client.post("/api/auth/login", json={"email":"ci-viewer@plantflow.test","password":"ViewerTest-Password-1234"})
+        assert viewer_login.status_code == 200, viewer_login.text
+        viewer_headers = {"Authorization":"Bearer "+viewer_login.json()["access_token"]}
+        assert client.get("/api/inventory?plant_id=2", headers=viewer_headers).status_code == 403
+        assert client.post("/api/transfers", headers=viewer_headers, json={"source_id":1,"destination_id":2,"items":[{"product_id":1,"quantity":1}]}).status_code == 403
     request = Request({"type": "http", "headers": [], "method": "POST", "path": "/"})
     request.state.user = {"id": 1, "email": "ci-admin@plantflow.test", "role": "admin", "plant_id": None}
     transfer = create_transfer(
@@ -41,7 +55,7 @@ def main() -> None:
 
     assert source["on_hand"] == 117 and source["in_transit"] == 0, source
     assert destination["on_hand"] == 243 and destination["in_transit"] == 0, destination
-    print("PostgreSQL smoke test passed: migration, create, dispatch, partial receipt and completion.")
+    print("PostgreSQL smoke test passed: migration, login, role/plant authorization, create, dispatch, partial receipt and completion.")
 
 
 if __name__ == "__main__":
