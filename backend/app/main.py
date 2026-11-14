@@ -210,8 +210,15 @@ def transfer_view(connection, transfer: dict) -> dict:
     destination = connection.execute(
         "SELECT name,code FROM plants WHERE id=%s", (transfer["destination_id"],)
     ).fetchone()
+    job_order = None
+    if transfer.get("job_order_id"):
+        job_order = connection.execute(
+            "SELECT job_order_id,parent_build,product,quantity,unit,status FROM job_orders WHERE job_order_id=%s",
+            (transfer["job_order_id"],),
+        ).fetchone()
     return {
         **dict(transfer),
+        "job_order": dict(job_order) if job_order else None,
         "source": dict(source),
         "destination": dict(destination),
         "items": [dict(item) for item in items],
@@ -389,12 +396,16 @@ def create_transfer(data: TransferIn, request: Request):
         for line in data.items:
             if not connection.execute("SELECT 1 FROM products WHERE id=%s", (line.product_id,)).fetchone():
                 raise HTTPException(404, "Product not found.")
+        if data.job_order_id and not connection.execute(
+            "SELECT 1 FROM job_orders WHERE job_order_id=%s", (data.job_order_id,)
+        ).fetchone():
+            raise HTTPException(404, "Linked job order has not been imported.")
         stamp = now()
         number = "SFG-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
         transfer_id = connection.execute(
-            "INSERT INTO transfers(number,source_id,destination_id,status,created_at,notes,carrier,expected_at) "
-            "VALUES(%s,%s,%s,'DRAFT',%s,%s,%s,%s) RETURNING id",
-            (number, data.source_id, data.destination_id, stamp, data.notes, data.carrier, data.expected_at),
+            "INSERT INTO transfers(number,source_id,destination_id,status,created_at,notes,carrier,expected_at,job_order_id) "
+            "VALUES(%s,%s,%s,'DRAFT',%s,%s,%s,%s,%s) RETURNING id",
+            (number, data.source_id, data.destination_id, stamp, data.notes, data.carrier, data.expected_at, data.job_order_id),
         ).fetchone()["id"]
         for line in data.items:
             connection.execute(
