@@ -1,6 +1,6 @@
 import {useEffect,useState} from 'react';
 import {Activity,ArrowLeftRight,Boxes,Building2,CheckCircle2,ChevronRight,Download,Factory,LayoutDashboard,Plus,RefreshCw,Search,Truck,X} from 'lucide-react';
-const API='http://127.0.0.1:8000/api';
+const API=(import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api').replace(/\/$/, '');
 type Plant={id:number;name:string;code:string};type Product={id:number;sku:string;name:string;unit:string};type Item={product_id:number;sku:string;name:string;unit:string;quantity:number;received_qty:number};type Transfer={id:number;number:string;source_id:number;destination_id:number;source:Plant;destination:Plant;status:string;created_at:string;dispatched_at:string|null;received_at:string|null;notes:string;carrier:string;items:Item[];events:{event_type:string;event_at:string;details:string}[]};
 async function api(path:string,options?:RequestInit){const r=await fetch(API+path,{headers:{'Content-Type':'application/json'},...options});if(!r.ok){const e=await r.json().catch(()=>({detail:'Request failed'}));throw Error(e.detail||'Request failed')}return r.json()}
 const dt=(s?:string|null)=>s?new Date(s).toLocaleString():'—';const label=(s:string)=>s.replaceAll('_',' ').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
